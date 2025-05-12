@@ -1,21 +1,23 @@
 import os
 import base64
+from dotenv import load_dotenv
 import requests
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
+load_dotenv()
 # === CONFIG ===
 GRAFANA_URL = os.getenv("GRAFANA_URL")
-GRAFANA_USER= os.getenv("GRAFANA_USER")
-GRAFANA_PASSWORD = os.getenv("GRAFANA_PASSWORD")
-GRAFANA_API_TOKEN = f"Basic {base64.b64encode(f'{GRAFANA_USER}:{GRAFANA_PASSWORD}').decode('utf-8')}"  # Admin token
+GRAFANA_USER= os.getenv("GF_SECURITY_ADMIN_USER")
+GRAFANA_PASSWORD = os.getenv("GF_SECURITY_ADMIN_PASSWORD")
+GRAFANA_API_TOKEN = f"Basic {base64.b64encode(f'{GRAFANA_USER}:{GRAFANA_PASSWORD}'.encode('utf-8')).decode('utf-8')}"  # Admin token
 GRAFANA_HEADERS = {
     "Authorization": GRAFANA_API_TOKEN,
     "Content-Type": "application/json"
 }
 
 SERVICE_ACCOUNT_FILE = os.getenv("SERVICE_ACCOUNT_FILE")  # Google Workspace service account
-ADMIN_EMAIL = os.getenv("DELGATED_ADMIN_EMAIL")  # Delegated admin
+ADMIN_EMAIL = os.getenv("DELEGATED_ADMIN_EMAIL")  # Delegated admin
 SCOPES = ["https://www.googleapis.com/auth/admin.directory.group.readonly"]
 CUSTOM_DOMAIN = os.getenv("CUSTOM_DOMAIN")  # Your org domain
 
@@ -39,7 +41,12 @@ def get_user_groups(email):
 def get_grafana_users():
     """Fetch all users from Grafana."""
     r = requests.get(f"{GRAFANA_URL}/api/users", headers=GRAFANA_HEADERS)
-    return r.json() if r.ok else []
+    if not r.ok:
+        print(f"Failed to fetch Grafana users: {r.status_code} - {r.text}")
+        return []
+    users = r.json()
+    print(f"Fetched {len(users)} users from Grafana.")
+    return users
 
 def get_grafana_teams():
     """Fetch all teams from Grafana."""
@@ -103,6 +110,7 @@ existing_teams = get_grafana_teams()
 
 def main():
     group_count = 0
+    grp = []
     user_count = 0
     team_members_cache = {}
 
@@ -140,8 +148,9 @@ def main():
             team_id = existing_teams.get(group_modifier)
             if team_id:
                 add_user_to_team(user_id, team_id, team_members_cache)
-
-    group_count += len(groups)
+            grp.extend(group for group in groups if group not in grp)
+            
+    group_count = len(set(grp))
     reflect_users_not_in_groups()
     print(f"Sync complete. Processed {user_count} users and {group_count} groups.")
 
